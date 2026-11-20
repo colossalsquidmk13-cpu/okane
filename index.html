@@ -24,7 +24,7 @@ html, body { margin: 0; background: var(--bg); color: var(--text); }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
   font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased;
-  padding: calc(var(--safe-t) + 8px) 16px calc(var(--safe-b) + 84px);
+  padding: 0 16px calc(var(--safe-b) + 84px);
   overscroll-behavior-y: none; user-select: none; -webkit-user-select: none;
 }
 button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; }
@@ -33,7 +33,9 @@ input, select, textarea { font: inherit; color: var(--text); }
 .hidden { display: none !important; }
 
 /* 上のバー */
-.top { display: flex; align-items: center; justify-content: space-between; height: 44px; }
+/* 上のバーはスクロールしても残す。時計の表示の下に重ならないよう、背景で覆う */
+.top { display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 5;
+  background: var(--bg); margin: 0 -16px; padding: calc(var(--safe-t) + 8px) 16px 4px; min-height: 52px; }
 .top h1 { font-size: 17px; font-weight: 600; margin: 0; }
 .iconbtn { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--sub); }
 .iconbtn:active { background: var(--card); }
@@ -108,6 +110,23 @@ input, select, textarea { font: inherit; color: var(--text); }
 .days i.over { background: var(--bad); }
 .days i.zero { background: var(--card2); }
 .days .line { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--sub); opacity: .5; }
+/* 予算（見本は一海が使っていた家計簿アプリの「予算」画面） */
+.bhead { display: flex; justify-content: space-between; align-items: center; padding: 10px 0 2px; color: var(--sub); font-size: 13px; }
+.bhead button { color: var(--accent); font-size: 13px; }
+.brow { display: grid; grid-template-columns: 1fr 1.25fr; gap: 4px 12px; padding: 14px 0; border-bottom: 1px solid var(--line); width: 100%; text-align: left; }
+.brow:last-child { border-bottom: 0; }
+.brow .name { font-size: 18px; font-weight: 600; line-height: 1.3; }
+.brow .bar2 { height: 16px; border-radius: 99px; background: var(--card2); overflow: hidden; align-self: center; }
+.brow .bar2 i { display: block; height: 100%; border-radius: 99px; }
+.brow .left small { display: block; color: var(--sub); font-size: 11px; margin-top: 4px; }
+.brow .left .rest { font-size: 17px; font-weight: 600; }
+.brow .left .rest.minus { color: var(--bad); }
+.brow .right { text-align: right; color: var(--sub); font-size: 13px; align-self: end; line-height: 1.6; }
+.brow.total .name { font-size: 20px; }
+.brow.nob .rest { color: var(--sub); font-weight: 500; font-size: 14px; }
+.bedit .set-row input { width: 130px; text-align: right; background: var(--card2); border: 1px solid transparent; border-radius: 10px; padding: 8px 10px; outline: 0; font-size: 16px; font-variant-numeric: tabular-nums; }
+.bedit .set-row input:focus { border-color: var(--accent); }
+.bedit .sum { color: var(--sub); font-size: 12px; margin: 6px 0 14px; }
 .stat { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .stat div { background: var(--card2); border-radius: 12px; padding: 10px 12px; }
 .stat small { color: var(--sub); font-size: 12px; display: block; }
@@ -177,7 +196,7 @@ input, select, textarea { font: inherit; color: var(--text); }
   <button class="notice hidden" id="h-unk"></button>
   <div class="card">
     <h2>今日の食費</h2>
-    <div class="today"><span class="big num" id="h-food"></span><span class="of">予算 1,500〜1,800 円</span></div>
+    <div class="today"><span class="big num" id="h-food"></span><span class="of" id="h-foodof"></span></div>
     <div class="bar" id="h-foodbar"><i></i></div>
     <div class="hint" id="h-foodhint"></div>
   </div>
@@ -212,21 +231,14 @@ input, select, textarea { font: inherit; color: var(--text); }
     <b class="m-label"></b>
     <button class="iconbtn" data-month="1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
   </div>
-  <div class="card">
-    <h2>まとめ</h2>
-    <div class="stat" id="s-stat"></div>
+  <div class="card" style="padding:4px 16px">
+    <div class="bhead"><span>予算</span><button id="s-editbudget">編集</button></div>
+    <div id="s-budget"></div>
   </div>
   <div class="card">
     <h2>毎日の食費<span id="s-foodavg"></span></h2>
     <div class="days" id="s-days"></div>
-  </div>
-  <div class="card">
-    <h2>用途ごと</h2>
-    <div id="s-cats"></div>
-  </div>
-  <div class="card">
-    <h2>支払い方法</h2>
-    <div id="s-pay"></div>
+    <div class="hint" id="s-foodline"></div>
   </div>
 </section>
 
@@ -235,6 +247,10 @@ input, select, textarea { font: inherit; color: var(--text); }
   <div class="card">
     <h2>マイメニュー<button id="m-add">追加</button></h2>
     <div id="m-list"></div>
+  </div>
+  <div class="card">
+    <h2>月の予算<button id="set-budget">編集</button></h2>
+    <div id="set-blist"></div>
   </div>
   <div class="card">
     <h2>つなぎ先（スプレッドシート）</h2>
@@ -272,6 +288,14 @@ input, select, textarea { font: inherit; color: var(--text); }
   <button class="danger hidden" id="e-del">この記録を消す</button>
 </div>
 
+<div class="sheet bedit" id="bsheet">
+  <div class="grab"></div>
+  <h3><span>月の予算</span><button id="b-close">閉じる</button></h3>
+  <div id="b-rows"></div>
+  <div class="sum" id="b-sum"></div>
+  <button class="primary" id="b-save">保存する</button>
+</div>
+
 <div class="toast" id="toast"><span id="toast-msg"></span><button id="toast-undo">取り消す</button></div>
 
 <script>
@@ -304,7 +328,7 @@ async function api(body) {
   return j;
 }
 
-async function sync(poll) {
+async function sync(poll, retried) {
   if (!cfg.url || syncing) return;
   syncing = true; $("#refresh").classList.add("spin");
   try {
@@ -317,10 +341,16 @@ async function sync(poll) {
     const res = await api({ action: poll ? "poll" : "load", since });
     // 送る待ちに残っている追加は、まだスプレッドシートにないので手元に残す
     const pendingAdds = queue.filter(o => o.op === "add").map(o => o.rec);
-    data = { records: res.records.concat(pendingAdds), menu: res.menu, categories: res.categories };
+    // 予算の変更がまだ送る待ちなら、手元の予算を使う（古い Apps Script で budgets がない場合も手元を残す）
+    const pendingBudget = queue.filter(o => o.op === "budget").pop();
+    const keepBudgets = pendingBudget ? pendingBudget.budgets : (res.budgets || data.budgets || {});
+    data = { records: res.records.concat(pendingAdds), menu: res.menu, categories: res.categories, budgets: keepBudgets };
     save(); setOffline("");
   } catch (e) {
-    setOffline(e.message === "key" ? "合言葉が違います（設定で直してください）" : `つながりません。記録は手元に残して、あとで送ります${queue.length ? `（${queue.length}件待ち）` : ""}`);
+    // アプリを切り替えた瞬間などに通信が途中で切れることがあるので、1回だけ黙って送り直す
+    if (!retried && e.message !== "key") { syncing = false; setTimeout(() => sync(poll, true), 3000); return; }
+    setOffline(e.message === "key" ? "合言葉が違います（設定で直してください）" :
+      `つながりません。記録は手元に残して、あとで送ります${queue.length ? `（${queue.length}件待ち）` : ""}（${String(e.message).slice(0, 40)}）`);
   } finally {
     syncing = false; $("#refresh").classList.remove("spin"); render();
   }
@@ -378,11 +408,14 @@ function renderHome() {
   u.innerHTML = `<span>未分類が <b>${unk}件</b> あります</span><span class="go">分ける ›</span>`;
 
   const food = sum(rs.filter(r => r.at.slice(0, 10) === today() && r.cat === "食費"));
+  // 今日の食費の予算 ＝ 月の食費予算 ÷ 今月の日数（予算タブで決めた額から自動で出す）
+  const limit = Math.round(dailyFood());
   $("#h-food").textContent = yen(food);
-  $("#h-foodbar").classList.toggle("over", food > FOOD_MAX);
-  $("#h-foodbar i").style.width = Math.min(100, food / FOOD_MAX * 100) + "%";
-  $("#h-foodhint").textContent = food === 0 ? "まだ記録がありません" : food > FOOD_MAX ? `予算を ${yen(food - FOOD_MAX)} こえています` :
-    food >= FOOD_MIN ? "今日は予算の範囲に入りました" : `あと ${yen(FOOD_MAX - food)} 使えます`;
+  $("#h-foodof").textContent = `今日の予算 ${yen(limit)}`;
+  $("#h-foodbar").classList.toggle("over", food > limit);
+  $("#h-foodbar i").style.width = Math.min(100, food / limit * 100) + "%";
+  $("#h-foodhint").textContent = (food === 0 ? "まだ記録がありません" : food > limit ? `予算を ${yen(food - limit)} こえています` : `あと ${yen(limit - food)} 使えます`)
+    + (budgets()["食費"] ? "" : "（食費の月予算を決めると、ここが自動で変わります）");
 
   $("#h-menu").innerHTML = data.menu.length ? data.menu.map((m, i) =>
     `<button class="mbtn" data-menu="${i}"><span class="n">${esc(m.name)}</span><span class="p num">${yen(m.amount)}</span></button>`).join("")
@@ -411,39 +444,77 @@ function renderList() {
 function renderStats() {
   const mk = monthKey(month);
   $$(".m-label").forEach(e => e.textContent = `${month.getFullYear()}年${month.getMonth() + 1}月`);
-  const rs = recsOf(mk), total = sum(rs), prev = sum(recsOf(monthKey(addMonth(month, -1))));
+  const rs = recsOf(mk), total = sum(rs), B = budgets();
   const isNow = mk === monthKey(new Date());
-  const days = isNow ? new Date().getDate() : new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   const allDays = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
-  const food = rs.filter(r => r.cat === "食費");
-  $("#s-stat").innerHTML = `
-    <div><small>合計</small><b class="num">${yen(total)}</b></div>
-    <div><small>先月</small><b class="num">${yen(prev)}</b></div>
-    <div><small>1日あたり</small><b class="num">${yen(days ? total / days : 0)}</b></div>
-    <div><small>食費 1日あたり</small><b class="num">${yen(days ? sum(food) / days : 0)}</b></div>`;
-  // 毎日の食費（点線は予算の上限 1,800 円）
-  const per = Array.from({ length: allDays }, (_, i) => sum(food.filter(r => Number(r.at.slice(8, 10)) === i + 1)));
-  const max = Math.max(FOOD_MAX * 1.3, ...per);
-  $("#s-days").innerHTML = `<div class="line" style="bottom:${FOOD_MAX / max * 100}%"></div>` +
-    per.map((v, i) => `<i class="${v === 0 ? "zero" : v > FOOD_MAX ? "over" : ""}" style="height:${v ? v / max * 100 : 2}%" title="${i + 1}日 ${yen(v)}"></i>`).join("");
-  const over = per.slice(0, days).filter(v => v > FOOD_MAX).length;
-  $("#s-foodavg").textContent = over ? `予算こえ ${over}日` : "";
-  // 用途ごと
+  const days = isNow ? new Date().getDate() : allDays;
   const byCat = {};
   rs.forEach(r => byCat[r.cat] = (byCat[r.cat] || 0) + Number(r.amount));
-  const cs = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
-  $("#s-cats").innerHTML = cs.length ? cs.map(([c, v]) => `<div class="cat"><div class="top2"><span>${esc(c)}</span><span class="num">${yen(v)}<span style="color:var(--sub);font-weight:400"> ${Math.round(v / total * 100)}%</span></span></div>
-    <div class="bar"><i style="width:${v / cs[0][1] * 100}%;background:${CAT_COLOR[c] || "#9C9AA8"}"></i></div></div>`).join("") : `<div class="empty">記録がありません</div>`;
-  const byPay = {};
-  rs.forEach(r => byPay[r.pay || "現金"] = (byPay[r.pay || "現金"] || 0) + Number(r.amount));
-  $("#s-pay").innerHTML = Object.entries(byPay).sort((a, b) => b[1] - a[1]).map(([p, v]) =>
-    `<div class="set-row"><span>${esc(p)}</span><span class="num">${yen(v)}</span></div>`).join("") || `<div class="empty">—</div>`;
+
+  // 予算：予算総額 → 予算のある用途（カテゴリの並び順）→ 予算のない用途で使ったもの
+  const totalBudget = B["全体"] || Object.entries(B).filter(([k]) => k !== "全体").reduce((s, [, v]) => s + v, 0);
+  const row = (name, spent, budget, color, cls = "") => {
+    if (!budget) return `<button class="brow nob ${cls}" data-budget="1"><div class="name">${esc(name)}</div><div class="bar2"><i style="width:0"></i></div>
+      <div class="left"><small>予算</small><span class="rest">未設定</span></div><div class="right num">支出: ${num(spent)}円</div></button>`;
+    const rest = budget - spent;
+    return `<button class="brow ${cls}" data-budget="1"><div class="name">${esc(name)}</div>
+      <div class="bar2"><i style="width:${Math.min(100, spent / budget * 100)}%;background:${color}"></i></div>
+      <div class="left"><small>残り</small><span class="rest num ${rest < 0 ? "minus" : ""}">${rest < 0 ? "-" : ""}${num(Math.abs(rest))}円</span></div>
+      <div class="right num">予算: ${num(budget)}円<br>支出: ${num(spent)}円</div></button>`;
+  };
+  const cats = (data.categories || DEFAULT_CATS);
+  let html = row("予算総額", total, totalBudget, "var(--accent)", "total");
+  cats.filter(c => B[c]).forEach(c => html += row(c, byCat[c] || 0, B[c], CAT_COLOR[c]));
+  Object.keys(byCat).filter(c => !B[c]).sort((a, b) => byCat[b] - byCat[a]).forEach(c => html += row(c, byCat[c], 0, CAT_COLOR[c]));
+  $("#s-budget").innerHTML = html;
+
+  // 毎日の食費（点線は1日の食費予算）
+  const food = rs.filter(r => r.cat === "食費");
+  const line = dailyFood(month);
+  const per = Array.from({ length: allDays }, (_, i) => sum(food.filter(r => Number(r.at.slice(8, 10)) === i + 1)));
+  const max = Math.max(line * 1.3, ...per);
+  $("#s-days").innerHTML = `<div class="line" style="bottom:${line / max * 100}%"></div>` +
+    per.map((v, i) => `<i class="${v === 0 ? "zero" : v > line ? "over" : ""}" style="height:${v ? v / max * 100 : 2}%" title="${i + 1}日 ${yen(v)}"></i>`).join("");
+  const over = per.slice(0, days).filter(v => v > line).length;
+  $("#s-foodavg").textContent = over ? `予算こえ ${over}日` : "";
+  $("#s-foodline").textContent = `点線は1日の予算 ${yen(line)}（${B["食費"] ? `月の食費予算 ${yen(B["食費"])} ÷ ${allDays}日` : "食費の予算が未設定なので仮の値"}）・1日平均 ${yen(days ? sum(food) / days : 0)}`;
+}
+
+/* ============ 予算 ============ */
+function budgets() { return data.budgets || {}; }
+const num = n => Math.round(n).toLocaleString("ja-JP");
+/** 1日の食費予算 ＝ 月の食費予算 ÷ その月の日数（未設定なら 1,800 円） */
+function dailyFood(d = new Date()) {
+  const b = budgets()["食費"];
+  return b ? b / new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate() : FOOD_MAX;
+}
+function openBudget() {
+  const B = budgets();
+  const cats = data.categories || DEFAULT_CATS;
+  $("#b-rows").innerHTML = ["全体", ...cats].map(c => `<div class="set-row"><span>${c === "全体" ? "<b>予算総額</b>" : esc(c)}</span>
+    <input data-b="${esc(c)}" inputmode="numeric" pattern="[0-9]*" placeholder="${c === "全体" ? "合計を使う" : "なし"}" value="${B[c] || ""}"></div>`).join("");
+  drawBudgetSum();
+  $("#bsheet").classList.add("open"); $("#sheet-bg").classList.add("open");
+}
+function drawBudgetSum() {
+  const s = $$("#b-rows input").filter(i => i.dataset.b !== "全体").reduce((t, i) => t + (Number(i.value.replace(/[^\d]/g, "")) || 0), 0);
+  $("#b-sum").textContent = `用途ごとの合計 ${yen(s)}。予算総額を空けておくと、この合計を使います。`;
+}
+function saveBudget() {
+  const b = {};
+  $$("#b-rows input").forEach(i => { const v = Number(i.value.replace(/[^\d]/g, "")); if (v > 0) b[i.dataset.b] = v; });
+  data.budgets = b;
+  push({ op: "budget", budgets: b }); closeSheet(); toast("予算を保存しました");
 }
 
 function renderSet() {
   $("#c-url").value = cfg.url; $("#c-key").value = cfg.key;
   $("#c-status").textContent = cfg.url ? (queue.length ? `送る待ち ${queue.length}件` : "つながっています") : "まだつないでいません（いまは見本のデータです）";
   $("#c-status").className = "status " + (cfg.url ? "ok" : "");
+  const B = budgets();
+  $("#set-blist").innerHTML = Object.keys(B).length ? ["全体", ...(data.categories || DEFAULT_CATS)].filter(c => B[c]).map(c =>
+    `<div class="set-row"><span>${c === "全体" ? "予算総額" : esc(c)}</span><span class="num">${yen(B[c])}</span></div>`).join("")
+    : `<div class="empty">まだ設定していません</div>`;
   $("#m-list").innerHTML = data.menu.length ? data.menu.map((m, i) => `<div class="set-row"><span>${esc(m.name)}<span class="status"> ・ ${esc(m.cat)}</span></span>
     <span><span class="num">${yen(m.amount)}</span> <button class="x" data-mdel="${i}">削除</button></span></div>`).join("") : `<div class="empty">まだありません</div>`;
 }
@@ -482,7 +553,7 @@ function openSheet(m, rec) {
   $("#sheet").classList.add("open"); $("#sheet-bg").classList.add("open");
   if (m !== "edit") setTimeout(() => $("#e-amount").focus(), 280);
 }
-function closeSheet() { $("#sheet").classList.remove("open"); $("#sheet-bg").classList.remove("open"); document.activeElement?.blur(); }
+function closeSheet() { $("#sheet").classList.remove("open"); $("#bsheet").classList.remove("open"); $("#sheet-bg").classList.remove("open"); document.activeElement?.blur(); }
 function drawCats() {
   $("#e-cats").innerHTML = (data.categories || DEFAULT_CATS).map(c => `<button class="chip ${c === pickCat ? "on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("");
   const l = $("#e-learn");
@@ -532,6 +603,7 @@ function toast(msg, undo) {
 document.addEventListener("click", e => {
   const t = e.target.closest("button"); if (!t) return;
   if (t.dataset.tab) return show(t.dataset.tab);
+  if (t.dataset.budget) return openBudget();
   if (t.dataset.month) { month = addMonth(month, Number(t.dataset.month)); return render(); }
   if (t.dataset.filter) { filter = t.dataset.filter; return render(); }
   if (t.dataset.cat) { pickCat = t.dataset.cat; return drawCats(); }
@@ -549,6 +621,11 @@ $("#h-editmenu").onclick = () => show("set");
 $("#m-add").onclick = () => openSheet("menu");
 $("#h-unk").onclick = () => { filter = "未分類"; month = new Date(); show("list"); };
 $("#e-close").onclick = closeSheet;
+$("#b-close").onclick = closeSheet;
+$("#b-save").onclick = saveBudget;
+$("#b-rows").addEventListener("input", drawBudgetSum);
+$("#s-editbudget").onclick = openBudget;
+$("#set-budget").onclick = openBudget;
 $("#sheet-bg").onclick = closeSheet;
 $("#e-save").onclick = saveSheet;
 $("#e-del").onclick = () => {
@@ -582,7 +659,7 @@ function demoData() {
     const d = new Date(now.getTime() - i * 0.6 * 864e5), s = shops[i % shops.length];
     rs.push({ id: "demo" + i, at: fmtAt(d), amount: s[1], shop: s[0], cat: s[2], memo: "", pay: s[3], src: s[3] === "現金" ? "手入力" : "メール" });
   }
-  return { demo: true, records: rs, categories: DEFAULT_CATS,
+  return { demo: true, records: rs, categories: DEFAULT_CATS, budgets: { "全体": 100000, "食費": 45000, "交通費": 5000, "日用品": 5000 },
     menu: [{ name: "かつや", amount: 900, cat: "食費", shop: "かつや" }, { name: "油そば bimbo", amount: 900, cat: "食費", shop: "bimbo" },
       { name: "松屋", amount: 700, cat: "食費", shop: "松屋" }, { name: "キッチンコート（半額）", amount: 900, cat: "食費", shop: "キッチンコート" }] };
 }
