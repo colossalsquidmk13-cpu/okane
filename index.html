@@ -205,7 +205,7 @@ input, select, textarea { font: inherit; color: var(--text); }
     <div class="menu" id="h-menu"></div>
   </div>
   <button class="cash" id="h-cash">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>現金で入力
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>手で入力（現金・楽天カード）
   </button>
   <div class="card">
     <h2>最近<button data-tab="list">すべて</button></h2>
@@ -278,6 +278,7 @@ input, select, textarea { font: inherit; color: var(--text); }
   <div class="amount-in"><span>¥</span><input id="e-amount" inputmode="numeric" pattern="[0-9]*" placeholder="0"></div>
   <div class="field"><label>用途</label><div class="chips" id="e-cats"></div></div>
   <div class="learn hidden" id="e-learn"></div>
+  <div class="field" id="e-payf"><label>支払い</label><div class="chips" id="e-pays"></div></div>
   <div class="two">
     <div class="field"><label>店・内容</label><input id="e-shop" placeholder="例：本屋"></div>
     <div class="field"><label>日時</label><input id="e-at" type="datetime-local"></div>
@@ -533,11 +534,20 @@ function show(t) {
 }
 
 /* ============ 入力シート ============ */
-let editing = null, mode = "cash", pickCat = "食費";
+let editing = null, mode = "cash", pickCat = "食費", pickPay = "現金";
+const PAYS = ["現金", "楽天カード", "その他"];   // JCB はメールから自動で入るので、手で入れる候補に出さない（2026-11-20）
+function isAuto(r) { return r.src === "メール" || r.src === "背面タップ"; }
+function drawPays() {
+  $("#e-pays").innerHTML = PAYS.map(p => `<button class="chip ${p === pickPay ? "on" : ""}" data-pay="${p}">${p}</button>`).join("");
+}
 function openSheet(m, rec) {
   mode = m; editing = rec || null;
   const r = rec || {};
-  $("#e-title").textContent = { cash: "現金で入力", edit: "記録を直す", menu: "マイメニューに追加" }[m];
+  $("#e-title").textContent = { cash: "手で入力", edit: "記録を直す", menu: "マイメニューに追加" }[m];
+  pickPay = r.pay && PAYS.includes(r.pay) ? r.pay : "現金";
+  // 支払いを選べるのは、手で入れるときと、手で入れた記録を直すとき（メールや背面タップで自動で入った記録は変えない）
+  $("#e-payf").classList.toggle("hidden", m === "menu" || (m === "edit" && isAuto(r)));
+  drawPays();
   $("#e-amount").value = r.amount || "";
   $("#e-shop").value = r.shop || "";
   $("#e-memo").value = r.memo || "";
@@ -557,7 +567,7 @@ function closeSheet() { $("#sheet").classList.remove("open"); $("#bsheet").class
 function drawCats() {
   $("#e-cats").innerHTML = (data.categories || DEFAULT_CATS).map(c => `<button class="chip ${c === pickCat ? "on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("");
   const l = $("#e-learn");
-  const fromMail = mode === "edit" && editing && editing.src === "メール" && editing.shop;
+  const fromMail = mode === "edit" && editing && isAuto(editing) && editing.shop;
   l.classList.toggle("hidden", !fromMail || !pickCat);
   if (fromMail) l.innerHTML = `次から「${esc(editing.shop)}」は <b>${esc(pickCat)}</b> に自動で分けます`;
 }
@@ -575,12 +585,13 @@ function saveSheet() {
   }
   if (mode === "edit") {
     const rec = { amount, cat: pickCat, shop: $("#e-shop").value.trim(), memo: $("#e-memo").value.trim(), at };
-    const learn = editing.src === "メール" && editing.cat !== pickCat;
+    if (!isAuto(editing)) rec.pay = pickPay;
+    const learn = isAuto(editing) && editing.cat !== pickCat;
     Object.assign(editing, rec);
     if (learn) data.records.forEach(r => { if (r.shop === editing.shop && r.cat === "未分類") r.cat = pickCat; });
     push({ op: "update", id: editing.id, rec, learn }); closeSheet(); toast("保存しました"); return;
   }
-  const rec = { id: uid(), at, amount, shop: $("#e-shop").value.trim(), cat: pickCat, memo: $("#e-memo").value.trim(), pay: "現金", src: "手入力" };
+  const rec = { id: uid(), at, amount, shop: $("#e-shop").value.trim(), cat: pickCat, memo: $("#e-memo").value.trim(), pay: pickPay, src: "手入力" };
   addRecord(rec, `${yen(amount)} を記録しました`); closeSheet();
 }
 
@@ -607,6 +618,7 @@ document.addEventListener("click", e => {
   if (t.dataset.month) { month = addMonth(month, Number(t.dataset.month)); return render(); }
   if (t.dataset.filter) { filter = t.dataset.filter; return render(); }
   if (t.dataset.cat) { pickCat = t.dataset.cat; return drawCats(); }
+  if (t.dataset.pay) { pickPay = t.dataset.pay; return drawPays(); }
   if (t.dataset.menu) {
     const m = data.menu[Number(t.dataset.menu)];
     navigator.vibrate?.(10);
