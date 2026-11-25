@@ -260,6 +260,12 @@ input, select, textarea { font: inherit; color: var(--text); }
     <div class="status" id="c-status" style="margin-top:10px"></div>
     <button class="ghost" id="c-poll">カードのメールを今すぐ確認</button>
   </div>
+  <div class="card">
+    <h2>PayPay の明細</h2>
+    <button class="ghost" id="p-pick" style="margin-top:0">CSV を読み込む</button>
+    <input type="file" id="p-file" accept=".csv,text/csv" class="hidden">
+    <div class="hint">PayPay の取引履歴から書き出した CSV（月に1回）。読み込むと、先に確認の画面が出ます。</div>
+  </div>
   <div class="hint" style="text-align:center">お金アプリ v1 ・ データはスプレッドシートに保存されます</div>
 </section>
 
@@ -295,6 +301,13 @@ input, select, textarea { font: inherit; color: var(--text); }
   <div id="b-rows"></div>
   <div class="sum" id="b-sum"></div>
   <button class="primary" id="b-save">保存する</button>
+</div>
+
+<div class="sheet" id="psheet">
+  <div class="grab"></div>
+  <h3><span>PayPay の取り込み</span><button id="p-close">閉じる</button></h3>
+  <div id="p-body"></div>
+  <button class="primary" id="p-apply" style="margin-top:12px">取り込む</button>
 </div>
 
 <div class="toast" id="toast"><span id="toast-msg"></span><button id="toast-undo">取り消す</button></div>
@@ -536,7 +549,7 @@ function show(t) {
 /* ============ 入力シート ============ */
 let editing = null, mode = "cash", pickCat = "食費", pickPay = "現金";
 const PAYS = ["現金", "楽天カード", "その他"];   // JCB はメールから自動で入るので、手で入れる候補に出さない（2026-11-20）
-function isAuto(r) { return r.src === "メール" || r.src === "背面タップ"; }
+function isAuto(r) { return r.src === "メール" || r.src === "背面タップ" || r.src === "CSV"; }
 function drawPays() {
   $("#e-pays").innerHTML = PAYS.map(p => `<button class="chip ${p === pickPay ? "on" : ""}" data-pay="${p}">${p}</button>`).join("");
 }
@@ -563,7 +576,7 @@ function openSheet(m, rec) {
   $("#sheet").classList.add("open"); $("#sheet-bg").classList.add("open");
   if (m !== "edit") setTimeout(() => $("#e-amount").focus(), 280);
 }
-function closeSheet() { $("#sheet").classList.remove("open"); $("#bsheet").classList.remove("open"); $("#sheet-bg").classList.remove("open"); document.activeElement?.blur(); }
+function closeSheet() { $("#sheet").classList.remove("open"); $("#bsheet").classList.remove("open"); $("#psheet").classList.remove("open");$("#sheet-bg").classList.remove("open"); document.activeElement?.blur(); }
 function drawCats() {
   $("#e-cats").innerHTML = (data.categories || DEFAULT_CATS).map(c => `<button class="chip ${c === pickCat ? "on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("");
   const l = $("#e-learn");
@@ -661,6 +674,87 @@ $("#c-save").onclick = async () => {
 $("#c-poll").onclick = () => cfg.url ? (sync(true), toast("カードのメールを確認しています")) : toast("先にスプレッドシートにつないでください");
 document.addEventListener("visibilitychange", () => { if (!document.hidden) sync(); });
 window.addEventListener("online", () => sync());
+
+/* ============ PayPay の CSV 取り込み ============
+ * 読むのはここ、照合と書き込みはスプレッドシート側。先に確認の画面を出してから反映する。 */
+let ppRows = [];
+
+function parseCsv(text) {
+  const rows = []; let row = [], cell = "", q = false;
+  text = text.replace(/^﻿/, "");
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c !== '"') cell += c; else if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+    else if (c === '"') q = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n") { row.push(cell.replace(/\r$/, "")); rows.push(row); row = []; cell = ""; }
+    else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+function payPayRows(text) {
+  const [head, ...body] = parseCsv(text);
+  const col = name => (head || []).findIndex(h => h.startsWith(name));
+  const c = { at: col("取引日"), out: col("出金金額"), inn: col("入金金額"), kind: col("取引内容"), shop: col("取引先"), txn: col("取引番号") };
+  if (Object.values(c).some(i => i < 0)) throw new Error("PayPay の取引履歴の CSV ではないようです");
+  const num = v => Number(String(v || "").replace(/[^\d]/g, "")) || 0;
+  return body.filter(r => r[c.txn]).map(r => {
+    const m = r[c.at].match(/(\d{4})\/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2})/) || [];
+    return { at: `${m[1]}-${pad(m[2])}-${pad(m[3])} ${pad(m[4])}:${m[5]}`, out: num(r[c.out]), amount: num(r[c.out]) || num(r[c.inn]), kind: r[c.kind], shop: r[c.shop] === "-" ? "" : r[c.shop], txn: r[c.txn] };
+  });
+}
+
+async function readPayPay(file) {
+  if (!cfg.url) return toast("先にスプレッドシートにつないでください");
+  try {
+    const buf = await file.arrayBuffer();
+    let text;
+    try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch { text = new TextDecoder("shift_jis").decode(buf); }
+    ppRows = payPayRows(text);
+    toast("照合しています…");
+    await sync();
+    if (queue.length) return toast("送る待ちの記録があります。つながってからもう一度");
+    const res = await api({ action: "paypayCsv", rows: ppRows });
+    if (!res.items) throw new Error("Apps Script が古い版です");
+    showPayPay(res.items);
+  } catch (e) { alert("読み込めませんでした：" + e.message); }
+}
+
+function showPayPay(items) {
+  const of = (...s) => items.filter(i => s.includes(i.status));
+  const line = i => `<div class="set-row"><span>${esc(i.shop || i.kind)}<span class="status"> ・ ${esc(i.at.slice(5))}</span></span><span class="num">${yen(i.amount)}</span></div>`;
+  const pick = i => `${line(i)}<div class="field" style="margin:4px 0 10px"><select data-pp="${esc(i.txn)}"><option value="">何もしない</option>${
+    i.status === "check" ? `<option value="fix">背面タップの記録（${yen(i.near.amount)}）をこの金額に直す</option><option value="add">別の支払いとして追加</option>`
+      : `<option value="add">支出として追加</option>`}</select></div>`;
+  const add = of("new"), ask = of("check", "ask"), manual = of("manual");
+  let h = `<div class="stat"><div><small>追加する</small><b class="num">${add.length}件 ${yen(add.reduce((s, i) => s + i.amount, 0))}</b></div>
+    <div><small>記録済み（抜く）</small><b class="num">${of("done", "match").length}件</b></div></div>`;
+  if (ask.length) h += `<div class="day"><span>要確認（選んでください）</span></div>` + ask.map(pick).join("");
+  if (manual.length) h += `<div class="day"><span>返金・取消（明細で手で直してください）</span></div>` + manual.map(line).join("");
+  if (add.length) h += `<div class="day"><span>追加する支払い</span></div>` + add.map(line).join("");
+  h += `<div class="hint">受け取り・ポイントなど対象外：${of("ignore").length}件</div>`;
+  $("#p-body").innerHTML = h;
+  $("#p-apply").disabled = !(add.length || ask.length || of("match").length);
+  $("#psheet").scrollTop = 0;
+  $("#psheet").classList.add("open"); $("#sheet-bg").classList.add("open");
+}
+
+async function applyPayPay() {
+  const choices = {};
+  $$("#p-body select").forEach(s => { if (s.value) choices[s.dataset.pp] = s.value; });
+  $("#p-apply").disabled = true;
+  try {
+    const res = await api({ action: "paypayCsv", rows: ppRows, apply: true, choices });
+    closeSheet(); toast(`${res.added}件を追加、${res.updated}件を照合しました`); sync();
+  } catch (e) { $("#p-apply").disabled = false; alert("取り込めませんでした：" + e.message); }
+}
+
+$("#p-pick").onclick = () => $("#p-file").click();
+$("#p-file").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) readPayPay(f); };
+$("#p-close").onclick = closeSheet;
+$("#p-apply").onclick = applyPayPay;
 
 /* ============ 見本のデータ（つなぐ前だけ） ============ */
 function demoData() {
